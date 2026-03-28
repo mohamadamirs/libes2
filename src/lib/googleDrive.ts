@@ -11,12 +11,8 @@ const auth = new google.auth.JWT({
 // Menginisialisasi objek Google Drive API dengan versi v3 dan autentikasi yang sudah diatur.
 const drive = google.drive({ version: 'v3', auth });
 
-/**
- * Mengambil daftar folder di dalam folder induk tertentu dari Google Drive.
- * Hanya mengembalikan folder yang tidak dihapus (trashed = false).
- * @param parentId ID folder induk.
- * @returns Array berisi objek folder (id, name).
- */
+const ROOT_ID = import.meta.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+
 export async function getFolders(parentId: string) {
   const res = await drive.files.list({
     // Query untuk mencari folder: 'parentId' adalah induk, mimeType adalah folder, dan tidak dihapus.
@@ -57,5 +53,42 @@ export async function getMediaFiles(
   } catch (error) {
     console.error('Error fetching media files:', error); // Mencatat error ke konsol
     throw error; // Melemparkan error untuk penanganan lebih lanjut.
+  }
+}
+
+export async function getArchiveNavigation(
+  yearId?: string,
+  monthId?: string,
+  activityId?: string,
+) {
+  try {
+    let data = [];
+    let view = 'years';
+    let baseUrl = '?yearId=';
+
+    if (activityId) {
+      view = 'files';
+      // Data file akan dihandle oleh getMediaFiles secara terpisah
+      return { data: [], view, baseUrl: '' };
+    }
+
+    if (monthId) {
+      data = await getFolders(monthId);
+      view = 'activities';
+      baseUrl = `?yearId=${yearId}&monthId=${monthId}&activityId=`;
+    } else if (yearId) {
+      data = await getFolders(yearId);
+      view = 'months';
+      baseUrl = `?yearId=${yearId}&monthId=`;
+    } else {
+      data = await getFolders(ROOT_ID);
+      view = 'years';
+      baseUrl = '?yearId=';
+    }
+
+    return { data, view, baseUrl };
+  } catch (error) {
+    console.error('Fungsi getArchiveNavigation Error:', error);
+    throw new Error('Gagal mengambil struktur arsip.');
   }
 }

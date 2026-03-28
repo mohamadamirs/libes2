@@ -4,39 +4,16 @@ import Header from "../components/Header.astro";
 import Sidebar from "../components/docs/Sidebar.astro";
 import FolderGrid from "../components/docs/FolderGrid.astro";
 import FileGrid from "../components/docs/FileGrid.astro";
+import { getArchiveNavigation } from "../lib/googleDrive";
 import { getFolders } from "../lib/googleDrive";
 
-const ROOT_ID = import.meta.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+
 const yearId = Astro.url.searchParams.get("yearId");
 const monthId = Astro.url.searchParams.get("monthId");
 const activityId = Astro.url.searchParams.get("activityId");
 
-// DEBUGGING RADAR
-console.log("--- DEBUG DRIVE NAV ---");
-console.log("ROOT_ID:", ROOT_ID);
-console.log("yearId:", yearId);
-console.log("monthId:", monthId);
-console.log("activityId:", activityId);
-
-let data = [];
-let view = "years";
-
-// LOGIKA NAVIGASI 4 LEVEL
-if (activityId) {
-  view = "files";
-} else if (monthId) {
-  // Kita sedang di level 3 (Daftar Kegiatan), klik selanjutnya adalah level 4 (File)
-  data = await getFolders(monthId);
-  view = "activities";
-} else if (yearId) {
-  // Kita sedang di level 2 (Daftar Bulan), klik selanjutnya adalah level 3 (Kegiatan)
-  data = await getFolders(yearId);
-  view = "months";
-} else {
-  // Kita sedang di level 1 (Daftar Tahun), klik selanjutnya adalah level 2 (Bulan)
-  data = await getFolders(ROOT_ID);
-  view = "years";
-}
+// Panggil "Otak" di lib untuk menentukan data dan view
+const { data, view, baseUrl } = await getArchiveNavigation(yearId, monthId, activityId);
 ---
 
 <Layout title="Dokumentasi | Literasi Brebesan">
@@ -66,14 +43,12 @@ if (activityId) {
         </header>
 
         <!-- RENDER KONTEN BERDASARKAN VIEW -->
-        {view === "years" && <FolderGrid items={data} baseUrl="?yearId=" />}
-        
-        {view === "months" && (
-          <FolderGrid items={data} baseUrl={`?yearId=${yearId}&monthId=`} />
-        )}
-
-        {view === "activities" && (
-          <FolderGrid items={data} baseUrl={`?yearId=${yearId}&monthId=${monthId}&activityId=`} />
+              {view !== "files" && (
+          <FolderGrid 
+            items={data} 
+            baseUrl={baseUrl} 
+            type={view === 'years' ? 'year' : 'folder'} 
+          />
         )}
 
         {view === "files" && (
@@ -88,11 +63,8 @@ if (activityId) {
   import { initNavbar } from "../js/navbar";
   // import {initPhotoModal} from "../js/docs/docs.modal.js"
   initNavbar();
-  // initPhotoModal();
   
   document.addEventListener("astro:page-load", () => {
     initNavbar();
-  // initPhotoModal();
-
   });
 </script>
