@@ -1,0 +1,98 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Sidebar from "../components/docs/Sidebar.astro";
+import FolderGrid from "../components/docs/FolderGrid.astro";
+import FileGrid from "../components/docs/FileGrid.astro";
+import { getFolders } from "../lib/googleDrive";
+
+const ROOT_ID = import.meta.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+const yearId = Astro.url.searchParams.get("yearId");
+const monthId = Astro.url.searchParams.get("monthId");
+const activityId = Astro.url.searchParams.get("activityId");
+
+// DEBUGGING RADAR
+console.log("--- DEBUG DRIVE NAV ---");
+console.log("ROOT_ID:", ROOT_ID);
+console.log("yearId:", yearId);
+console.log("monthId:", monthId);
+console.log("activityId:", activityId);
+
+let data = [];
+let view = "years";
+
+// LOGIKA NAVIGASI 4 LEVEL
+if (activityId) {
+  view = "files";
+} else if (monthId) {
+  // Kita sedang di level 3 (Daftar Kegiatan), klik selanjutnya adalah level 4 (File)
+  data = await getFolders(monthId);
+  view = "activities";
+} else if (yearId) {
+  // Kita sedang di level 2 (Daftar Bulan), klik selanjutnya adalah level 3 (Kegiatan)
+  data = await getFolders(yearId);
+  view = "months";
+} else {
+  // Kita sedang di level 1 (Daftar Tahun), klik selanjutnya adalah level 2 (Bulan)
+  data = await getFolders(ROOT_ID);
+  view = "years";
+}
+---
+
+<Layout title="Dokumentasi | Literasi Brebesan">
+  <Header />
+  <div class="flex h-screen bg-white pt-16 overflow-hidden">
+    <Sidebar activeYear={yearId} />
+    
+    <main class="flex-1 flex flex-col min-w-0 bg-slate-50/50">
+      <!-- BREADCRUMBS -->
+      <nav class="px-6 h-14 flex items-center border-b border-slate-200 bg-white">
+        <div class="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+          <a href="/dokumentasi" class="hover:text-blue-600">ARSIP</a>
+          {yearId && <><span>/</span><a href={`?yearId=${yearId}`}>TAHUN</a></>}
+          {monthId && <><span>/</span><a href={`?yearId=${yearId}&monthId=${monthId}`}>BULAN</a></>}
+          {activityId && <><span>/</span><span class="text-slate-900">MEDIA</span></>}
+        </div>
+      </nav>
+
+      <div class="flex-1 overflow-y-auto p-6 md:p-10 pb-32">
+        <header class="mb-10">
+          <h1 class="text-3xl font-black italic text-slate-900 tracking-tighter">
+            {view === 'years' && 'Arsip Dokumentasi'}
+            {view === 'months' && 'Pilih Bulan'}
+            {view === 'activities' && 'Daftar Kegiatan'}
+            {view === 'files' && 'Galeri Media'}
+          </h1>
+        </header>
+
+        <!-- RENDER KONTEN BERDASARKAN VIEW -->
+        {view === "years" && <FolderGrid items={data} baseUrl="?yearId=" />}
+        
+        {view === "months" && (
+          <FolderGrid items={data} baseUrl={`?yearId=${yearId}&monthId=`} />
+        )}
+
+        {view === "activities" && (
+          <FolderGrid items={data} baseUrl={`?yearId=${yearId}&monthId=${monthId}&activityId=`} />
+        )}
+
+        {view === "files" && (
+          <FileGrid activityId={activityId} /> 
+        )}
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  import { initNavbar } from "../js/navbar";
+  // import {initPhotoModal} from "../js/docs/docs.modal.js"
+  initNavbar();
+  // initPhotoModal();
+  
+  document.addEventListener("astro:page-load", () => {
+    initNavbar();
+  // initPhotoModal();
+
+  });
+</script>

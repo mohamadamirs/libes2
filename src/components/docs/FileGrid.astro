@@ -1,0 +1,199 @@
+---
+import { getMediaFiles } from '../../lib/googleDrive';
+
+const activityId = Astro.url.searchParams.get('activityId');
+
+let initialFiles = [];
+let initialToken = null;
+
+if (activityId) {
+  try {
+    // Kita ambil 4 file saja untuk pengetesan awal
+    const data = await getMediaFiles(activityId, null, 4);
+    initialFiles = data.files || [];
+    initialToken = data.nextPageToken || null;
+
+    // Log untuk melihat apa yang sebenarnya terjadi di server
+    console.log("--- DEBUG DRIVE API ---");
+    console.log("Folder ID:", activityId);
+    console.log("Jumlah file ditemukan:", initialFiles.length);
+    console.log("Token halaman berikutnya:", initialToken);
+    
+    // Mari kita intip nama-nama filenya
+    initialFiles.forEach((f, i) => {
+      console.log(`File ${i+1}: ${f.name} | Tipe: ${f.mimeType}`);
+    });
+    console.log("-----------------------");
+
+  } catch (e) {
+    console.error("Gagal memuat data awal di server:", e);
+  }
+}
+---
+
+<!-- 2. TAMPILAN HTML (STRUKTUR GRID) -->
+<div 
+  id="photo-container" 
+  data-activityid={activityId} 
+  data-nexttoken={initialToken}
+  class="grid grid-cols-2 md:grid-cols-4 gap-4 min-h-fit"
+>
+  {initialFiles.map((file) => (
+    <div 
+      class="group relative aspect-square bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-sm transition-all hover:shadow-md cursor-pointer photo-card " 
+      data-file-id={file.id}
+      data-file-name={file.name}
+      data-download-url={file.webContentLink}
+    >
+      <img 
+        src={`https://drive.google.com/thumbnail?id=${file.id}&sz=w1000`} 
+        alt={file.name} 
+        class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+        loading="lazy"
+        width="400" 
+        height="400" 
+        referrerpolicy="no-referrer"
+      />
+      <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+        <p class="text-[10px] text-white font-bold truncate">{file.name}</p>
+        <p class="text-[8px] text-gray-200 uppercase tracking-widest mt-1">Klik untuk memperbesar</p>
+      </div>
+    </div>
+  ))}
+</div>
+
+<!-- SENSOR SCROLL -->
+<div id="scroll-sensor" class="w-full h-20 flex justify-center items-center mt-4">
+  <div class="animate-pulse bg-slate-200 h-10 w-10 rounded-full"></div>
+</div>
+
+<!-- MODAL LIGHTBOX -->
+<div id="image-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/95 hidden opacity-0 transition-opacity duration-300 backdrop-blur-sm cursor-pointer photo-card">
+  <button id="close-modal" class="absolute top-4 right-4 text-white p-2 z-10">
+    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+  </button>
+  <div class="relative max-w-[95vw] max-h-[90vh] flex flex-col items-center" onclick="event.stopPropagation()">
+    <div id="modal-loader" class="absolute inset-0 flex items-center justify-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+    </div>
+    <img id="modal-image" src="" class="max-h-[85vh] w-auto object-contain rounded-lg shadow-2xl opacity-0 transition-opacity duration-500" referrerpolicy="no-referrer" />
+    <a id="download-btn" href="" target="_blank" class="mt-5 px-6 py-3 bg-white text-black text-sm font-bold rounded-full shadow-lg">Download Resolusi Asli</a>
+  </div>
+</div>
+<script is:inline>
+  function initGallery() {
+    const container = document.getElementById('photo-container');
+    const sensor = document.getElementById('scroll-sensor');
+    const modal = document.getElementById('image-modal');
+    const modalImg = document.getElementById('modal-image');
+    const modalLoader = document.getElementById('modal-loader');
+    const downloadBtn = document.getElementById('download-btn');
+
+    if (!container || !sensor) return;
+
+    const activityId = container.getAttribute('data-activityid');
+    let nextPageToken = container.getAttribute('data-nexttoken');
+    let isFetching = false;
+
+    // --- 1. LOGIKA MODAL (EVENT DELEGATION) ---
+    // Kita pasang satu pendengar di induk (container) untuk semua foto
+    container.addEventListener('click', (e) => {
+      const card = e.target.closest('.photo-card');
+      if (!card) return;
+
+      const fileId = card.getAttribute('data-file-id');
+      const downloadUrl = card.getAttribute('data-download-url');
+
+      if (!fileId) return;
+
+      // Persiapan modal (Reset state)
+      modalLoader.classList.remove('hidden');
+      modalImg.classList.add('opacity-0');
+      
+      // Gunakan w1600 (lebih stabil dari w3000 untuk menghindari 404)
+      modalImg.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
+      downloadBtn.href = downloadUrl;
+
+      modal.classList.remove('hidden');
+      setTimeout(() => modal.classList.add('opacity-100'), 10);
+    });
+
+    // Handler saat gambar modal selesai dimuat
+    modalImg.onload = () => {
+      modalLoader.classList.add('hidden');
+      modalImg.classList.remove('opacity-0');
+    };
+
+    // Handler jika gambar modal gagal dimuat
+    modalImg.onerror = () => {
+      modalLoader.classList.add('hidden');
+      console.error("Gagal memuat gambar resolusi tinggi.");
+    };
+
+    // Tutup Modal
+    document.getElementById('close-modal').onclick = () => {
+      modal.classList.remove('opacity-100');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        modalImg.src = ''; // Bersihkan src
+      }, 300);
+    };
+
+    // --- 2. FUNGSI FETCH LEBIH BANYAK (CSR) ---
+    async function fetchMore() {
+      if (isFetching || !nextPageToken || nextPageToken === "null") return;
+      isFetching = true;
+
+      try {
+        const res = await fetch(`/api/drive-files?folderId=${activityId}&pageToken=${nextPageToken}&limit=4`);
+        const data = await res.json();
+
+        data.files.forEach(file => {
+          const div = document.createElement('div');
+          // Pastikan semua atribut data- terpasang di sini!
+          div.className = "group relative aspect-square bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-sm transition-all hover:shadow-md cursor-pointer photo-card";
+          div.setAttribute('data-file-id', file.id);
+          div.setAttribute('data-file-name', file.name);
+          div.setAttribute('data-download-url', file.webContentLink);
+
+          const thumbUrl = `https://drive.google.com/thumbnail?id=${file.id}&sz=w1000`;
+
+          div.innerHTML = `
+            <img 
+              src="${thumbUrl}" 
+              alt="${file.name}" 
+              width="400" 
+              height="400" 
+              class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+              loading="lazy" 
+              referrerpolicy="no-referrer"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+              <p class="text-[10px] text-white font-bold truncate">${file.name}</p>
+              <p class="text-[8px] text-gray-200 uppercase tracking-widest mt-1">Klik untuk memperbesar</p>
+            </div>
+          `;
+          
+          container.appendChild(div);
+        });
+
+        nextPageToken = data.nextPageToken;
+        if (!nextPageToken || nextPageToken === "null") sensor.style.display = 'none';
+      } catch (e) {
+        console.error("Gagal load scroll:", e);
+      } finally {
+        isFetching = false;
+      }
+    }
+
+    // --- 3. INTERSECTION OBSERVER ---
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) fetchMore();
+    }, { rootMargin: '300px' });
+
+    observer.observe(sensor);
+  }
+
+  // Jalankan inisialisasi
+  initGallery();
+</script>

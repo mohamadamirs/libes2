@@ -1,0 +1,32 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Main from "../components/utama/Main.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<Layout
+  title="Literasi Brebes"
+  description="Komunitas untuk berkembang"
+>
+  <!-- header -->
+  <Header />
+  <!-- Main Content -->
+  <Main />
+  <!-- Footer Semantik -->
+  <Footer />
+</Layout>
+<script>
+  import { initNavbar } from "../js/navbar";
+  import { initTime } from "../js/time-section";
+
+  initNavbar();
+  initTime();
+  
+
+  // Agar script jalan kembali saat pindah halaman (Astro View Transitions)
+  document.addEventListener("astro:page-load", () => {
+    initNavbar();
+    initTime();
+  });
+</script>
